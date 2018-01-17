@@ -41,7 +41,7 @@ public:
   }
 
   void Register(const string& SpaceType, CreateFuncPtr func) {
-    LOG(LIB_INFO) << "Registering at the factory, space: " << SpaceType << " distance type: " << DistTypeName<dist_t>();
+    //LOG(LIB_INFO) << "Registering at the factory, space: " << SpaceType << " distance type: " << DistTypeName<dist_t>();
     Creators_[SpaceType] = func;
   }
 

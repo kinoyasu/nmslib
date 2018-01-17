@@ -95,9 +95,9 @@ const int kDataSparseVector = 2;
 const int kDataObjectAsString = 3;
 
 const std::map<std::string, int> NMSLIB_DATA_TYPES = {
-  {"DENSE_VECTOR", kDataDenseVector},
+  {"VECTOR", kDataDenseVector},
   {"SPARSE_VECTOR", kDataSparseVector},
-  {"OBJECT_AS_STRING", kDataObjectAsString},
+  {"STRING", kDataObjectAsString},
 };
 
 const int kDistFloat = 14;
@@ -107,15 +107,15 @@ const std::map<std::string, int> NMSLIB_DIST_TYPES = {
   {"INT", kDistInt}
 };
 
-PyMODINIT_FUNC initnmslib() {
-  PyObject* module = Py_InitModule("nmslib", nmslibMethods);
+PyMODINIT_FUNC initnmslib_vector() {
+  PyObject* module = Py_InitModule("nmslib_vector", nmslibMethods);
   if (module == NULL) {
     return;
   }
   import_array();
   // data type
   NmslibData_Type.tp_new = PyType_GenericNew;
-  NmslibData_Type.tp_name = "nmslib.DataType";
+  NmslibData_Type.tp_name = "nmslib_vector.DataType";
   NmslibData_Type.tp_basicsize = sizeof(NmslibData);
   NmslibData_Type.tp_flags = Py_TPFLAGS_DEFAULT;
   NmslibData_Type.tp_dict = PyDict_New();
@@ -132,7 +132,7 @@ PyMODINIT_FUNC initnmslib() {
         reinterpret_cast<PyObject*>(&NmslibData_Type));
   // dist type
   NmslibDist_Type.tp_new = PyType_GenericNew;
-  NmslibDist_Type.tp_name = "nmslib.DistType";
+  NmslibDist_Type.tp_name = "nmslib_vector.DistType";
   NmslibDist_Type.tp_basicsize = sizeof(NmslibDist);
   NmslibDist_Type.tp_flags = Py_TPFLAGS_DEFAULT;
   NmslibDist_Type.tp_dict = PyDict_New();
@@ -178,7 +178,7 @@ bool readList(PyListObject* lst, std::vector<T>& z, F&& f) {
 
 BoolObject readDenseVector(const Space<float>* space, PyObject* data, int id) {
   if (!PyList_Check(data)) {
-    raise << "expected DataType.DENSE_VECTOR";
+    raise << "expected DataType.VECTOR";
     return std::make_pair(false, nullptr);
   }
   PyListObject* l = reinterpret_cast<PyListObject*>(data);
@@ -237,7 +237,7 @@ BoolObject readObjectAsString(const Space<dist_t>* space,
                               PyObject* data,
                               int id) {
   if (!PyString_Check(data)) {
-    raise << "expected DataType.OBJECT_AS_STRING";
+    raise << "expected DataType.STRING";
     return std::make_pair(false, nullptr);
   }
   const char* s = PyString_AsString(data);

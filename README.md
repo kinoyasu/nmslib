@@ -1,3 +1,25 @@
+Note about this branch
+-----------------
+This is my private branch to open the private customized nmslib/hnsw v1.6 with v1.5.x usage.
+My private fixes and functions will be added.
+
+My usage is...
+```bash
+cd similarity_search
+cmake . -DWITH_EXTRAS=1
+make
+cd ../python_bindings/
+make -f makefile_legacy
+```
+and use python_bindings/nmslib_vector.so as same as v1.5.x .
+
+Changes
+-----------------
+
+* Alignment with v1.5.x usage
+
+--------(start original README.md from HERE)--------
+
 =================
 
 [![Join the chat at https://gitter.im/nmslib/Lobby](https://badges.gitter.im/nmslib/Lobby.svg)](https://gitter.im/nmslib/Lobby?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)

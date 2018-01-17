@@ -5,14 +5,14 @@ NON_METRIC_SPACE_LIBRARY_LIB=$(NON_METRIC_SPACE_LIBRARY)/release
 PYTHON_INC=/usr/include/python$(PYTHON_VERSION)
 ADD_LIBS= -lrt -lgsl -lgslcblas -fopenmp
 
-CXXFLAGS=-c -fpic -Wall -I$(PYTHON_INC) -I$(NON_METRIC_SPACE_LIBRARY_INC) -std=c++11 -Ofast -fno-strict-aliasing
+CXXFLAGS=-c -fpic -Wall -I$(PYTHON_INC) -I$(NON_METRIC_SPACE_LIBRARY_INC) -I/usr/lib64/python$(PYTHON_VERSION)/site-packages/numpy/core/include -std=c++11 -Ofast -fno-strict-aliasing
 LDFLAGS=-shared -lpython$(PYTHON_VERSION) -pthread 
 
 SOURCES=nmslib.cc
 OBJECTS=$(SOURCES:.cc=.o)
 LIBS=$(NON_METRIC_SPACE_LIBRARY_LIB)/libNonMetricSpaceLib.a $(NON_METRIC_SPACE_LIBRARY_LIB)/liblshkit.a $(ADD_LIBS) 
 
-FINALLIB=nmslib.so
+FINALLIB=nmslib_vector.so
 
 all: $(SOURCES) $(FINALLIB)
 
