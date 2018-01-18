@@ -490,7 +490,7 @@ namespace similarity {
 
         const std::string StrDesc() const override;
         void Search(RangeQuery<dist_t>* query, IdType) const override;
-        void Search(KNNQuery<dist_t>* query, IdType) const override;
+        void Search(KNNQuery<dist_t>* query, IdType startObj) const override;
 
         void SetQueryTimeParams(const AnyParams&) override;
     private:
@@ -501,10 +501,10 @@ namespace similarity {
         void baseSearchAlgorithmOld(KNNQuery<dist_t> *query);
         void baseSearchAlgorithmV1Merge(KNNQuery<dist_t> *query);
         void listPassingModifiedAlgorithm(KNNQuery<dist_t>* query);
-        void SearchL2CustomV1Merge(KNNQuery<dist_t> *query);
+        void SearchL2CustomV1Merge(KNNQuery<dist_t> *query, IdType TargetLevel);
         void SearchL2CustomOld(KNNQuery<dist_t>* query);
         void SearchCosineNormalizedOld(KNNQuery<dist_t> *query);
-        void SearchCosineNormalizedV1Merge(KNNQuery<dist_t> *query);
+        void SearchCosineNormalizedV1Merge(KNNQuery<dist_t> *query, IdType TargetLevel);
 
         
 

@@ -667,7 +667,7 @@ namespace similarity {
 
 
     template <typename dist_t>
-    void Hnsw<dist_t>::Search(KNNQuery<dist_t>* query, IdType) const  {
+    void Hnsw<dist_t>::Search(KNNQuery<dist_t>* query, IdType startObj) const  {
         bool useOld = searchAlgoType_ == kOld || (searchAlgoType_ == kHybrid && ef_ >= 1000);
         //cout << "Ef = " << ef_ << " use old = " << useOld << endl;
         switch (searchMethod_) {
@@ -690,7 +690,7 @@ namespace similarity {
                         if (useOld)
                           const_cast<Hnsw*>(this)->SearchL2CustomOld(query);
                         else
-                          const_cast<Hnsw *>(this)->SearchL2CustomV1Merge(query);
+                          const_cast<Hnsw *>(this)->SearchL2CustomV1Merge(query, startObj);
             			break;
             		case 4:
                         /// Basic search using optimized index with one-time normalized cosine similarity
@@ -698,7 +698,7 @@ namespace similarity {
                         if (useOld)
                           const_cast<Hnsw *>(this)->SearchCosineNormalizedOld(query);
                         else
-                          const_cast<Hnsw *>(this)->SearchCosineNormalizedV1Merge(query);
+                          const_cast<Hnsw *>(this)->SearchCosineNormalizedV1Merge(query, startObj);
                         break;
             		};
     }

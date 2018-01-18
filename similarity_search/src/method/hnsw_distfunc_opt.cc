@@ -452,10 +452,14 @@ namespace similarity {
 	}
 
 template <typename dist_t>
-void Hnsw<dist_t>::SearchL2CustomV1Merge(KNNQuery<dist_t> *query) {
+void Hnsw<dist_t>::SearchL2CustomV1Merge(KNNQuery<dist_t> *query, IdType TargetLevel) {
 	float *pVectq = (float *)((char *)query->QueryObject()->data());
 	float PORTABLE_ALIGN32 TmpRes[8];
 	size_t qty = query->QueryObject()->datalength() >> 2;
+
+	if (TargetLevel > maxlevel_) {
+		TargetLevel = maxlevel_;
+	}
 
 	VisitedList * vl = visitedlistpool->getFreeVisitedList();
     vl_type *massVisited = vl->mass;
@@ -468,7 +472,7 @@ void Hnsw<dist_t>::SearchL2CustomV1Merge(KNNQuery<dist_t> *query) {
 	dist_t curdist = (fstdistfunc_(pVectq, (float *)(data_level0_memory_ + enterpointId_*memoryPerObject_ + offsetData_ + 16), qty, TmpRes));
 
 
-	for (int i = maxlevel1; i > 0; i--) {
+	for (int i = maxlevel1; i > 0 && i > min(maxlevel1 - 1, TargetLevel); i--) {
 		bool changed = true;
 		while (changed) {
 			changed = false;
@@ -517,7 +521,12 @@ void Hnsw<dist_t>::SearchL2CustomV1Merge(KNNQuery<dist_t> *query) {
 		size_t itemQty = 0;
 		dist_t topKey = sortedArr.top_key();
 
-		int  *data = (int *)(data_level0_memory_ + curNodeNum*memoryPerObject_ + offsetLevel0_);
+		int  *data;
+		if (TargetLevel > 0) {
+			data = (int *)(linkLists_[curNodeNum] + (maxM_ + 1)*(TargetLevel - 1)*sizeof(int));
+		} else {
+			data = (int *)(data_level0_memory_ + curNodeNum*memoryPerObject_ + offsetLevel0_);
+		}
 		int size = *data;
 		_mm_prefetch((char *)(massVisited + *(data + 1)), _MM_HINT_T0);
 		_mm_prefetch((char *)(massVisited + *(data + 1) + 64), _MM_HINT_T0);
@@ -563,7 +572,11 @@ void Hnsw<dist_t>::SearchL2CustomV1Merge(KNNQuery<dist_t> *query) {
 				}
 			}
 			// because itemQty > 1, there would be at least item in sortedArr
-			_mm_prefetch(data_level0_memory_ + sortedArr.top_item().data * memoryPerObject_ + offsetLevel0_, _MM_HINT_T0);
+			if (TargetLevel > 0) {
+				_mm_prefetch(linkLists_[sortedArr.top_item().data] + (maxM_ + 1)*(TargetLevel - 1)*sizeof(int), _MM_HINT_T0);
+			} else {
+				_mm_prefetch(data_level0_memory_ + sortedArr.top_item().data * memoryPerObject_ + offsetLevel0_, _MM_HINT_T0);
+			}
 		}
 		// To ensure that we either reach the end of the unexplored queue or currElem points to the first unused element
 		while (currElem < sortedArr.size() && queueData[currElem].used == true)
@@ -711,7 +724,7 @@ void Hnsw<dist_t>::SearchL2CustomV1Merge(KNNQuery<dist_t> *query) {
 	}
 
 template <typename dist_t>
-void Hnsw<dist_t>::SearchCosineNormalizedV1Merge(KNNQuery<dist_t> *query) {
+void Hnsw<dist_t>::SearchCosineNormalizedV1Merge(KNNQuery<dist_t> *query, IdType TargetLevel) {
 
 	float *pVectq = (float *)((char *)query->QueryObject()->data());
 	float PORTABLE_ALIGN32 TmpRes[8];
@@ -731,6 +744,9 @@ void Hnsw<dist_t>::SearchCosineNormalizedV1Merge(KNNQuery<dist_t> *query) {
 	}
 
 
+	if (TargetLevel > maxlevel_) {
+		TargetLevel = maxlevel_;
+	}
 
 
 	VisitedList * vl = visitedlistpool->getFreeVisitedList();
@@ -743,7 +759,7 @@ void Hnsw<dist_t>::SearchCosineNormalizedV1Merge(KNNQuery<dist_t> *query) {
 	dist_t curdist = (ScalarProductSIMD(pVectq, (float *)(data_level0_memory_ + enterpointId_*memoryPerObject_ + offsetData_ + 16), qty, TmpRes));
 
 
-	for (int i = maxlevel1; i > 0; i--) {
+	for (int i = maxlevel1; i > 0 && i > min(maxlevel1 - 1, TargetLevel); i--) {
 		bool changed = true;
 		while (changed) {
 			changed = false;
@@ -793,7 +809,12 @@ void Hnsw<dist_t>::SearchCosineNormalizedV1Merge(KNNQuery<dist_t> *query) {
 		size_t itemQty = 0;
 		dist_t topKey = sortedArr.top_key();
 
-		int  *data = (int *)(data_level0_memory_ + curNodeNum*memoryPerObject_ + offsetLevel0_);
+		int  *data;
+		if (TargetLevel > 0) {
+			data = (int *)(linkLists_[curNodeNum] + (maxM_ + 1)*(TargetLevel - 1)*sizeof(int));
+		} else {
+			data = (int *)(data_level0_memory_ + curNodeNum*memoryPerObject_ + offsetLevel0_);
+		}
 		int size = *data;
 		_mm_prefetch((char *)(massVisited + *(data + 1)), _MM_HINT_T0);
 		_mm_prefetch((char *)(massVisited + *(data + 1) + 64), _MM_HINT_T0);
@@ -840,7 +861,11 @@ void Hnsw<dist_t>::SearchCosineNormalizedV1Merge(KNNQuery<dist_t> *query) {
 				}
 			}
 			// because itemQty > 1, there would be at least item in sortedArr
-			_mm_prefetch(data_level0_memory_ + sortedArr.top_item().data * memoryPerObject_ + offsetLevel0_, _MM_HINT_T0);
+			if (TargetLevel > 0) {
+				_mm_prefetch(linkLists_[sortedArr.top_item().data] + (maxM_ + 1)*(TargetLevel - 1)*sizeof(int), _MM_HINT_T0);
+			} else {
+				_mm_prefetch(data_level0_memory_ + sortedArr.top_item().data * memoryPerObject_ + offsetLevel0_, _MM_HINT_T0);
+			}
 		}
 		// To ensure that we either reach the end of the unexplored queue or currElem points to the first unused element
 		while (currElem < sortedArr.size() && queueData[currElem].used == true)

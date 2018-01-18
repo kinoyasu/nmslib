@@ -22,6 +22,8 @@ Changes
 
 * **(save file format change)** Optimize memory allocation and alignment. The label area of Object is used for storing level of HnswNode.
 
+* nmslib_vector.knnQuery() : Added optional parameter to specify intended level in the index to search (default 0). Currently, it only works at the optimized hnsw index.
+
 --------(start original README.md from HERE)--------
 
 =================

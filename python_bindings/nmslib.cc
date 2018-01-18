@@ -685,7 +685,7 @@ class IndexWrapperBase {
   virtual void SaveIndex(const string& fileName) = 0;
   virtual void LoadIndex(const string& fileName) = 0;
   virtual void SetQueryTimeParams(const AnyParams& p) = 0;
-  virtual PyObject* KnnQuery(int k, const Object* query) = 0;
+  virtual PyObject* KnnQuery(int k, const Object* query, IdType level) = 0;
   virtual std::vector<IntVector> KnnQueryBatch(const int num_threads,
                                                const int k,
                                                const ObjectVector& query_objects) = 0;
@@ -767,12 +767,12 @@ class IndexWrapper : public IndexWrapperBase {
     index_->SetQueryTimeParams(p);
   }
 
-  PyObject* KnnQuery(int k, const Object* query) override {
+  PyObject* KnnQuery(int k, const Object* query, IdType level) override {
     IntVector ids;
 Py_BEGIN_ALLOW_THREADS
     KNNQueue<dist_t>* res;
     KNNQuery<dist_t> knn(*space_, query, k);
-    index_->Search(&knn, -1);
+    index_->Search(&knn, level);
     res = knn.Result()->Clone();
     while (!res->Empty()) {
       ids.insert(ids.begin(), res->TopObject()->id());
@@ -1148,7 +1148,8 @@ PyObject* knnQuery(PyObject* self, PyObject* args) {
   PyObject* ptr;
   int k;
   PyObject* data;
-  if (!PyArg_ParseTuple(args, "OiO", &ptr, &k, &data)) {
+  IdType level = 0;
+  if (!PyArg_ParseTuple(args, "OiO|i", &ptr, &k, &data, &level)) {
     raise << "Error reading parameters (expecting: index ref, K as in-KNN, query)";
     return NULL;
   }
@@ -1166,7 +1167,7 @@ PyObject* knnQuery(PyObject* self, PyObject* args) {
   }
   auto res = index->ReadObject(0, data);
   std::unique_ptr<const Object> query_obj(res.second);
-  return index->KnnQuery(k, query_obj.get());
+  return index->KnnQuery(k, query_obj.get(), level);
 }
 
 PyObject* knnQueryBatch(PyObject* self, PyObject* args) {
