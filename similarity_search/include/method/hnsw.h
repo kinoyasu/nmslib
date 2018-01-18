@@ -544,9 +544,9 @@ namespace similarity {
         bool                  PrintProgress_;
         int                   delaunay_type_;
         double                mult_;
-        int                   maxlevel_;
-        unsigned int enterpointId_;
-        unsigned int totalElementsStored_;
+        long                  maxlevel_;
+        unsigned long enterpointId_;
+        unsigned long totalElementsStored_ = 0;
 
         const ObjectVector&   data_;// We do not copy objects
         ObjectVector          data_rearranged_; 
@@ -559,7 +559,7 @@ namespace similarity {
         ElementList           ElList_;
 
         int                   vectorlength_ = 0;
-        int dist_func_type_;
+        long dist_func_type_;
         bool                  iscosine_ = false;
         size_t                offsetData_, offsetLevel0_;
         char                  *data_level0_memory_;

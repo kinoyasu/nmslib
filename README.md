@@ -18,6 +18,8 @@ Changes
 
 * Alignment with v1.5.x usage
 
+* **(save file format change)** Avoid "[Hnsw saves and loads options in index file by wrong byte-size #152](https://github.com/searchivarius/nmslib/issues/152)" by changing datatypes.
+
 --------(start original README.md from HERE)--------
 
 =================
