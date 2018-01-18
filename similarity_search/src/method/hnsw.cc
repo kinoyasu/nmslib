@@ -180,7 +180,11 @@ namespace similarity {
         ElList_.resize(data_.size());
         // One entry should be added before all the threads are started, or else add() will not work properly
         HnswNode *first = new HnswNode(data_[0], 0 /* id == 0 */);        
-        first->init(getRandomLevel(mult_), maxM_, maxM0_);        
+        int level = data_[0]->label();
+        if (level < 0) {
+            level = getRandomLevel(mult_);
+        }
+        first->init(level, maxM_, maxM0_);
         maxlevel_ = first->level;
         enterpoint_ = first;
         ElList_[0] = first;
@@ -205,7 +209,11 @@ namespace similarity {
             temp.swap(ElList_);
             ElList_.resize(data_.size());
             first = new HnswNode(data_[0], 0 /* id == 0 */);
-            first->init(getRandomLevel(mult_), maxM_, maxM0_);
+            int level = data_[0]->label();
+            if (level < 0) {
+                level = getRandomLevel(mult_);
+            }
+            first->init(level, maxM_, maxM0_);
             maxlevel_ = first->level;
             enterpoint_ = first;
             ElList_[0] = first;
@@ -475,7 +483,10 @@ namespace similarity {
     
     template <typename dist_t>
      void Hnsw<dist_t>::add(const Space<dist_t>* space, HnswNode *NewElement) {
-        int curlevel = getRandomLevel(mult_);
+        int curlevel = NewElement->getData()->label();
+        if (curlevel < 0) {
+            curlevel = getRandomLevel(mult_);
+        }
         unique_lock<mutex> *lock = nullptr;
         if (curlevel > maxlevel_)
             lock = new unique_lock<mutex>(MaxLevelGuard_);

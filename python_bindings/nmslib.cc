@@ -176,7 +176,7 @@ bool readList(PyListObject* lst, std::vector<T>& z, F&& f) {
   return true;
 }
 
-BoolObject readDenseVector(const Space<float>* space, PyObject* data, int id) {
+BoolObject readDenseVector(const Space<float>* space, PyObject* data, int id, int label) {
   if (!PyList_Check(data)) {
     raise << "expected DataType.VECTOR";
     return std::make_pair(false, nullptr);
@@ -186,11 +186,11 @@ BoolObject readDenseVector(const Space<float>* space, PyObject* data, int id) {
   if (!readList(l, arr, PyFloat_AsDouble)) {
     return std::make_pair(false, nullptr);
   }
-  const Object* z = new Object(id, -1, arr.size()*sizeof(float), &arr[0]);
+  const Object* z = new Object(id, label, arr.size()*sizeof(float), &arr[0]);
   return std::make_pair(true, z);
 }
 
-BoolObject readSparseVector(const Space<float>* space, PyObject* data, int id) {
+BoolObject readSparseVector(const Space<float>* space, PyObject* data, int id, int label) {
   if (!PyList_Check(data)) {
     raise << "expected DataType.SPARSE_VECTOR";
     return std::make_pair(false, nullptr);
@@ -228,20 +228,20 @@ BoolObject readSparseVector(const Space<float>* space, PyObject* data, int id) {
   }
   std::sort(arr.begin(), arr.end());
   const Object* z = reinterpret_cast<const SpaceSparseVector<float>*>(
-      space)->CreateObjFromVect(id, -1, arr);
+      space)->CreateObjFromVect(id, label, arr);
   return std::make_pair(true, z);
 }
 
 template <typename dist_t>
 BoolObject readObjectAsString(const Space<dist_t>* space,
                               PyObject* data,
-                              int id) {
+                              int id, int label) {
   if (!PyString_Check(data)) {
     raise << "expected DataType.STRING";
     return std::make_pair(false, nullptr);
   }
   const char* s = PyString_AsString(data);
-  const Object* z = space->CreateObjFromStr(id, -1,  s, NULL).release();
+  const Object* z = space->CreateObjFromStr(id, label,  s, NULL).release();
   return std::make_pair(true, z);
 }
 
@@ -250,6 +250,7 @@ BoolObject readObject(const int data_type,
                       const Space<dist_t>* space,
                       PyObject* data,
                       const int id,
+                      const int label,
                       const int dist_type) {
   raise << "not implemented for data_type "
         << data_type << " and dist_type "
@@ -262,6 +263,7 @@ BoolObject readObject(const int data_type,
                       const Space<float>* space,
                       PyObject* data,
                       const int id,
+                      const int label,
                       const int dist_type) {
   if (dist_type != kDistFloat) {
     raise << "expected float dist_type";
@@ -269,11 +271,11 @@ BoolObject readObject(const int data_type,
   }
   switch (data_type) {
     case kDataDenseVector:
-      return readDenseVector(space, data, id);
+      return readDenseVector(space, data, id, label);
     case kDataSparseVector:
-      return readSparseVector(space, data, id);
+      return readSparseVector(space, data, id, label);
     case kDataObjectAsString:
-      return readObjectAsString(space, data, id);
+      return readObjectAsString(space, data, id, label);
     default:
       raise << "not implemented";
       return std::make_pair(false, nullptr);
@@ -285,6 +287,7 @@ BoolObject readObject(const int data_type,
                       const Space<int>* space,
                       PyObject* data,
                       const int id,
+                      const int label,
                       const int dist_type) {
   if (dist_type != kDistInt) {
     raise << "expected int dist_type";
@@ -292,7 +295,7 @@ BoolObject readObject(const int data_type,
   }
   switch (data_type) {
     case kDataObjectAsString:
-      return readObjectAsString(space, data, id);
+      return readObjectAsString(space, data, id, label);
     default:
       raise << "not implemented";
       return std::make_pair(false, nullptr);
@@ -679,7 +682,7 @@ class IndexWrapperBase {
     data_[idx] = z;
   }
 
-  virtual const BoolObject ReadObject(int id, PyObject* data) = 0;
+  virtual const BoolObject ReadObject(int id, PyObject* data, int label) = 0;
   virtual const BoolPyObject WriteObject(size_t index) = 0;
   virtual void CreateIndex(const AnyParams& index_params) = 0;
   virtual void SaveIndex(const string& fileName) = 0;
@@ -725,8 +728,8 @@ class IndexWrapper : public IndexWrapperBase {
     delete index_;
   }
 
-  const BoolObject ReadObject(int id, PyObject* data) override {
-    return readObject(data_type_, space_, data, id, dist_type_);
+  const BoolObject ReadObject(int id, PyObject* data, int label) override {
+    return readObject(data_type_, space_, data, id, label, dist_type_);
   }
 
   const BoolPyObject WriteObject(size_t index) override {
@@ -1034,7 +1037,8 @@ PyObject* addDataPoint(PyObject* self, PyObject* args) {
   PyObject* ptr;
   PyObject* data;
   int32_t   id;
-  if (!PyArg_ParseTuple(args, "OiO", &ptr, &id, &data)) {
+  int32_t   label = -1;
+  if (!PyArg_ParseTuple(args, "OiO|i", &ptr, &id, &data, &label)) {
     raise << "Error reading parameters (expecting: index ref, object (as a string))";
     return NULL;
   }
@@ -1046,7 +1050,7 @@ PyObject* addDataPoint(PyObject* self, PyObject* args) {
     raise << "unknown data type - " << index->GetDataType();
     return NULL;
   }
-  auto res = index->ReadObject(id, data);
+  auto res = index->ReadObject(id, data, label);
   if (!res.first) {
     raise << "Cannot create a data-point object!";
     return NULL;
@@ -1165,7 +1169,7 @@ PyObject* knnQuery(PyObject* self, PyObject* args) {
     raise << "unknown data type - " << index->GetDataType();
     return NULL;
   }
-  auto res = index->ReadObject(0, data);
+  auto res = index->ReadObject(0, data, -1);
   std::unique_ptr<const Object> query_obj(res.second);
   return index->KnnQuery(k, query_obj.get(), level);
 }

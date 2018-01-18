@@ -24,6 +24,8 @@ Changes
 
 * nmslib_vector.knnQuery() : Added optional parameter to specify intended level in the index to search (default 0). Currently, it only works at the optimized hnsw index.
 
+* nmslib_vector.addDataPoint() : Added optional parameter to specify "label" integer in Object. It is used to indicate level of the datapoint in the index rather than random, in hnsw index.
+
 --------(start original README.md from HERE)--------
 
 =================
