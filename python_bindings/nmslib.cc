@@ -741,6 +741,12 @@ class IndexWrapper : public IndexWrapperBase {
                       method_name_, space_type_,
                       *space_, data_);
     index_->CreateIndex(index_params);
+    string methDesc = index_->StrDesc();
+    if (methDesc == "hnsw3" || methDesc == "hnsw4") {
+      //clear data_ to keep consistency (All elements have been already deleted in CreateIndex().)
+      LOG(LIB_INFO) << "Clear DataPoints for saving memory (" << methDesc << ").";
+      data_.clear();
+    }
   }
 
   void SaveIndex(const string& fileName) override {

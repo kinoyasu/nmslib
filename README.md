@@ -20,6 +20,8 @@ Changes
 
 * **(save file format change)** Avoid "[Hnsw saves and loads options in index file by wrong byte-size #152](https://github.com/searchivarius/nmslib/issues/152)" by changing datatypes.
 
+* **(save file format change)** Optimize memory allocation and alignment. The label area of Object is used for storing level of HnswNode.
+
 --------(start original README.md from HERE)--------
 
 =================

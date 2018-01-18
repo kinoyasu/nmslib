@@ -196,6 +196,7 @@ namespace similarity {
             ElList_[id] = node;
             if (progress_bar) ++(*progress_bar);
         }
+        endl(cerr);
 
         
         if (post_ == 1 || post_ == 2) {
@@ -217,6 +218,7 @@ namespace similarity {
                 ElList_[id] = node;
                 if (progress_bar1) ++(*progress_bar1);
             }
+            endl(cerr);
             int maxF = 0;
 
             //int degrees[100] = {0};
@@ -349,9 +351,9 @@ namespace similarity {
         }
         pmgr.CheckUnused();
         LOG(LIB_INFO) << "searchMethod			  = " << searchMethod_;
-        memoryPerObject_ = dataSectionSize + friendsSectionSize;
+        memoryPerObject_ = ((dataSectionSize + friendsSectionSize + 15) >> 4) * 16;
 
-        int total_memory_allocated = (memoryPerObject_*ElList_.size());
+        size_t total_memory_allocated = (memoryPerObject_*ElList_.size());
         data_level0_memory_ = (char*)malloc(memoryPerObject_*ElList_.size());        
 
         offsetLevel0_ = dataSectionSize;
@@ -364,6 +366,7 @@ namespace similarity {
         for (long i = 0; i < ElList_.size(); i++) {            
             ElList_[i]->copyDataAndLevel0LinksToOptIndex(data_level0_memory_ + (size_t)i*memoryPerObject_, offsetLevel0_, offsetData_);
             data_rearranged_[i] = new Object(data_level0_memory_ + (i)*memoryPerObject_ + offsetData_);
+            delete ElList_[i]->getData();
         };
         ////////////////////////////////////////////////////////////////////////
         //
@@ -392,6 +395,8 @@ namespace similarity {
         ////////////////////////////////////////////////////////
         linkLists_ = (char**)malloc(sizeof(void*)*ElList_.size());
         for (long i = 0; i < ElList_.size(); i++) {
+            //reserve level also in optimized index
+            *(data_rearranged_[i]->label_ptr()) = ElList_[i]->level;
             if (ElList_[i]->level < 1) {
                 linkLists_[i] = nullptr;
                 continue;
@@ -408,6 +413,10 @@ namespace similarity {
         LOG(LIB_INFO) << "Maximum level = " << enterpoint_->level;
         LOG(LIB_INFO) << "Total memory allocated for optimized index+data: " << (total_memory_allocated >> 20) << " Mb";
 
+        //level was already copied to data_rearranged_[]->label_ptr(). So, we can delete ElList_ here.
+        for (int i = 0; i < ElList_.size(); i++)
+            delete ElList_[i];
+        ElList_.clear();
     }
 
     template <typename dist_t>
@@ -443,7 +452,7 @@ namespace similarity {
 
     template <typename dist_t>
     const std::string Hnsw<dist_t>::StrDesc() const {
-        return METH_HNSW;
+        return METH_HNSW + ConvertToString(searchMethod_);
     }
 
     template <typename dist_t>
@@ -453,7 +462,7 @@ namespace similarity {
         if (data_level0_memory_)
             free(data_level0_memory_);
         if (linkLists_) {
-            for (int i = 0; i < ElList_.size(); i++) {
+            for (int i = 0; i < data_rearranged_.size(); i++) {
                 if (linkLists_[i])
                     free(linkLists_[i]);
             }
@@ -701,7 +710,7 @@ namespace similarity {
 
         std::ofstream output(location, std::ios::binary);
         streampos position;
-        totalElementsStored_ = ElList_.size();        
+        totalElementsStored_ = data_rearranged_.size();
 
         writeBinaryPOD(output, totalElementsStored_);
         writeBinaryPOD(output, memoryPerObject_);
@@ -726,7 +735,7 @@ namespace similarity {
 
         for (size_t i = 0; i < totalElementsStored_; i++) {            
             // TODO Can this one overflow? I really doubt
-            SIZEMASS_TYPE sizemass = ((ElList_[i]->level)*(maxM_ + 1))*sizeof(int);       
+            SIZEMASS_TYPE sizemass = ((data_rearranged_[i]->label())*(maxM_ + 1))*sizeof(int);
             writeBinaryPOD(output, sizemass);
             if((sizemass))
                 output.write(linkLists_[i], sizemass);
