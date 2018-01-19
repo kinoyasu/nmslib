@@ -32,6 +32,8 @@ Changes
 * nmslib_vector.knnIndexScore() is added. Its search key is the index position instead of data.
 * nmslib_vector.getDataPointLabel() is added. It gets label value (level in the hnsw index at this branch) for the index position.
 
+* nmslib_vector: addDataPointUnoptimizeIndex(), disableDataPoint(), recreateIndex() methods are added. They are used to recreate the already optimized hnsw index with deleting/adding DataPoints. **CAUTION:** The unoptimized index DataPoint entities still depend on the current hnsw index. Using createIndex() instead of recreateIndex() causes memory leak, becase createIndex() just deletes the current index.
+
 --------(start original README.md from HERE)--------
 
 =================

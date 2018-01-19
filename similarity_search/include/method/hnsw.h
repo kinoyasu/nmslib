@@ -268,7 +268,6 @@ namespace similarity {
             unique_lock<mutex> lock(accessGuard_);
             for (int i = 0; i < allFriends[level].size(); i++)
                 if (allFriends[level][i].second == element) {
-                    cerr << "This should not happen. For some reason the elements is already added";
                     return;
                 }
             allFriends[level].push_back(make_pair(distance, element));
@@ -326,6 +325,10 @@ namespace similarity {
         }
 
     public: void init(int level1, int maxFriends, int maxfriendslevel0) {
+        if (allFriends.size() > 0) {
+            //already inited. nothing to do.
+            return;
+        }
 
         level = level1;
         maxsize = maxFriends;
@@ -484,6 +487,7 @@ namespace similarity {
             const Space<dist_t>& space,
             const ObjectVector& data);
         void CreateIndex(const AnyParams& IndexParams) override;
+        void UnoptimizeIndex(ObjectVector& data) override;
 
         ~Hnsw();
 
@@ -565,6 +569,8 @@ namespace similarity {
         bool                  iscosine_ = false;
         size_t                offsetData_, offsetLevel0_;
         char                  *data_level0_memory_;
+        char                  *data_level0_memory_unoptimized_ = nullptr;
+        size_t                unoptimized_size_ = 0;
         char                  **linkLists_;
         size_t                memoryPerObject_;
         float                 (*fstdistfunc_)(const float* pVect1, const float* pVect2, size_t &qty, float *TmpRes);

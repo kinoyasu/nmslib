@@ -385,7 +385,8 @@ namespace similarity {
         ////////////////////////////////////////////////////////////////////////
         if (iscosine_)
         {
-            for (long i = 0; i < ElList_.size(); i++) {
+#pragma omp parallel for schedule(dynamic,128) num_threads(indexThreadQty_)
+            for (long i = unoptimized_size_; i < ElList_.size(); i++) {
                 float *v = (float *)(data_level0_memory_ + (size_t)i*memoryPerObject_ + offsetData_ + 16);
                 float sum = 0;
                 for (int i = 0; i < vectorlength_; i++) {
@@ -426,6 +427,152 @@ namespace similarity {
         for (int i = 0; i < ElList_.size(); i++)
             delete ElList_[i];
         ElList_.clear();
+
+        if (unoptimized_size_ > 0) {
+            free(data_level0_memory_unoptimized_);
+            unoptimized_size_ = 0;
+            data_level0_memory_unoptimized_ = nullptr;
+        }
+    }
+    template <typename dist_t> void Hnsw<dist_t>::UnoptimizeIndex(ObjectVector& data) {
+        //data_level0_memory_          : rearranged to data_. we should keep the memory to keep the actual vector data
+        //data_rearranged_, linkLists_ : rearranged to ElList_, .allFriends and initialize them
+        //enterpointId_                : enterpoint_
+        if (data_rearranged_.empty()) {
+            LOG(LIB_INFO) << "The index seems not optimized.";
+            return;
+        }
+        if (dist_func_type_ != 3) {
+            LOG(LIB_INFO) << "Only for CosineSimilarity optimized index.";
+            return;
+        }
+
+#ifdef _OPENMP
+        indexThreadQty_ = omp_get_max_threads();
+#endif
+
+        data.clear();
+        ElList_.clear();
+        data.reserve(data_rearranged_.size());
+
+        int new_size = 0;
+        vector<int> new_id;
+        new_id.resize(data_rearranged_.size());
+        int new_enterpointId = 0;
+        int max_level = 0;
+        for (int i = 0; i < data_rearranged_.size(); i++) {
+            int level = data_rearranged_[i]->label();
+            if (level > -1) {
+                data.resize(new_size + 1);
+                data[new_size] = new Object((char *)data_rearranged_[i]->buffer());
+                new_id[i] = new_size;
+                *(data[new_size]->id_ptr()) = new_size; //set new id
+                if (level > max_level) {
+                    max_level = level;
+                    new_enterpointId = new_size;
+                }
+                new_size++;
+            } else {
+                // Skip disabled objects
+                new_id[i] = -1;
+            }
+        }
+
+        ElList_.resize(new_size);
+        for (int id = 0; id < new_id.size(); ++id) {
+            if (new_id[id] > -1) {
+                HnswNode* node = new HnswNode(data_[new_id[id]], new_id[id]);
+                int level = data_[new_id[id]]->label();
+                //TODO: specify the maxM and maxM0 by Params or current values
+                node->init(level, 100, 200); //FIXME: Fixed value....
+                ElList_[new_id[id]] = node;
+            }
+        }
+        enterpoint_ = ElList_[new_enterpointId];
+        maxlevel_ = max_level;
+
+        LOG(LIB_INFO) << "Unoptimizing index.";
+        unique_ptr<ProgressDisplay> progress_bar(PrintProgress_ ? new ProgressDisplay(new_id.size(), cerr) : NULL);
+#pragma omp parallel for schedule(dynamic,128) num_threads(indexThreadQty_)
+        for (int id = 0; id < new_id.size(); ++id) {
+            if (new_id[id] > -1) {
+                int level = data_[new_id[id]]->label();
+                size_t qty = data_[new_id[id]]->datalength() >> 2;
+                for (int i = 0; i <= level; i++) {
+                    int  *data;
+                    if (i > 0) {
+                        data = (int *)(linkLists_[id] + (maxM_ + 1)*(i - 1)*sizeof(int));
+                    } else {
+                        data = (int *)(data_level0_memory_ + id*memoryPerObject_ + offsetLevel0_);
+                    }
+                    int size = *data;
+                    for (int j = 1; j <= size; j++) {
+                        int tnum = *(data + j);
+                        if (new_id[tnum] > -1) {
+                            //TODO: support for the other dist_func_type_ than 3(CosineSimilarity).
+                            //Assumed all vectors in the index were already normalized
+                            dist_t d = (ScalarProductSIMD((float *)(data_level0_memory_ + id*memoryPerObject_ + offsetData_ + 16),
+                                                          (float *)(data_level0_memory_ + tnum*memoryPerObject_ + offsetData_ + 16), qty));
+                            ElList_[new_id[id]]->addFriendlevel(i, d, ElList_[new_id[tnum]], &space_, delaunay_type_);
+                        }
+                    }
+                }
+            }
+            if (progress_bar) ++(*progress_bar);
+        }
+        endl(cerr);
+
+        LOG(LIB_INFO) << "Checking and fixing too much eaten by disableDataPoint().";
+        //TODO: specify it by Params
+        efConstruction_ = 1000; //FIXME: Fixed value....
+        M_ = maxM_; //needs to be recovered, because not specified yet.
+        unique_ptr<ProgressDisplay> progress_bar2(PrintProgress_ ? new ProgressDisplay(new_id.size(), cerr) : NULL);
+#pragma omp parallel for schedule(dynamic,128) num_threads(indexThreadQty_)
+        for (int id = 0; id < new_id.size(); ++id) {
+            if (new_id[id] > -1) {
+                int level = data_[new_id[id]]->label();
+                bool needs_readd = false;
+                for (int i = 0; i <= level; i++) {
+                    int  *data;
+                    if (i > 0) {
+                        data = (int *)(linkLists_[id] + (maxM_ + 1)*(i - 1)*sizeof(int));
+                    } else {
+                        data = (int *)(data_level0_memory_ + id*memoryPerObject_ + offsetLevel0_);
+                    }
+                    int size = *data;
+                    int new_size = ElList_[new_id[id]]->allFriends[i].size();
+                    if (size == 0 || new_size * 3 < size) {
+                        needs_readd = true;
+                    }
+                }
+                if (needs_readd) {
+                    add(&space_, ElList_[new_id[id]]);
+                }
+            }
+            if (progress_bar2) ++(*progress_bar2);
+        }
+        endl(cerr);
+
+        //NOTE: memory at data_level0_memory_ is kept because it has Objects of data_ now.
+        data_level0_memory_unoptimized_ = data_level0_memory_;
+        unoptimized_size_ = data_.size();
+        data_level0_memory_ = NULL;
+
+        for (int i = 0; i < data_rearranged_.size(); i++) {
+            if (linkLists_[i])
+                free(linkLists_[i]);
+        }
+        free(linkLists_);
+        linkLists_ = NULL;
+
+        for (const Object* p : data_rearranged_) delete p;
+        data_rearranged_.clear();
+
+        searchMethod_ = 0;
+        fstdistfunc_ = nullptr;
+        dist_func_type_ = 0;
+
+        LOG(LIB_INFO) << "Finished unoptimizing index. (" << unoptimized_size_ << " entries)";
     }
 
     template <typename dist_t>

@@ -59,7 +59,10 @@ static PyMethodDef nmslibMethods[] = {
   {"init", init, METH_VARARGS},
   {"addDataPoint", addDataPoint, METH_VARARGS},
   {"addDataPointBatch", addDataPointBatch, METH_VARARGS},
+  {"addDataPointUnoptimizeIndex", addDataPointUnoptimizeIndex, METH_VARARGS},
+  {"disableDataPoint", disableDataPoint, METH_VARARGS},
   {"createIndex", createIndex, METH_VARARGS},
+  {"recreateIndex", recreateIndex, METH_VARARGS},
   {"saveIndex", saveIndex, METH_VARARGS},
   {"loadIndex", loadIndex, METH_VARARGS},
   {"setQueryTimeParams", setQueryTimeParams, METH_VARARGS},
@@ -688,9 +691,12 @@ class IndexWrapperBase {
   virtual const BoolObject ReadObject(int id, PyObject* data, int label) = 0;
   virtual const BoolPyObject WriteObject(size_t index) = 0;
   virtual const BoolPyObject WriteLabel(size_t index) = 0;
+  virtual void DisableDataPoint(size_t index) = 0;
   virtual void CreateIndex(const AnyParams& index_params) = 0;
+  virtual void RecreateIndex(const AnyParams& index_params) = 0;
   virtual void SaveIndex(const string& fileName) = 0;
   virtual void LoadIndex(const string& fileName) = 0;
+  virtual void AddDataPointUnoptimizeIndex() = 0;
   virtual void SetQueryTimeParams(const AnyParams& p) = 0;
   virtual PyObject* KnnQuery(int k, const Object* query, IdType level) = 0;
   virtual PyObject* KnnQueryScore(int k, const Object* query, IdType level) = 0;
@@ -767,6 +773,29 @@ class IndexWrapper : public IndexWrapperBase {
     return std::make_pair(true, v);
   }
 
+  void DisableDataPoint(size_t index) override {
+    string methDesc = index_->StrDesc();
+    const Object* obj;
+    if (methDesc == "hnsw3" || methDesc == "hnsw4") {
+      //needs to access to the internal objects
+      obj = index_->GetInternalObject(index);
+      if (!obj) {
+        raise << "The data point has problem at index:" << index;
+        return;
+      }
+    } else {
+      raise << "disableDataPoint() is only for addDataPointUnoptimizeIndex(), for now." << index;
+      return;
+
+      if (index < 0 || index >= data_.size()) {
+        raise << "The data point index should be >= 0 & < " << data_.size();
+        return;
+      }
+      obj = data_[index];
+    }
+    *(obj->label_ptr()) = -256;
+  }
+
   void CreateIndex(const AnyParams& index_params) override {
     // Delete previously created index
     delete index_;
@@ -783,6 +812,22 @@ class IndexWrapper : public IndexWrapperBase {
     }
   }
 
+  void RecreateIndex(const AnyParams& index_params) override {
+    string methDesc = index_->StrDesc();
+    if (methDesc == "hnsw3" || methDesc == "hnsw4") {
+      raise << "Cannot recreate optimized index. Use addDataPointUnoptimizeIndex() to unoptimize.";
+      return;
+    }
+
+    index_->CreateIndex(index_params);
+    methDesc = index_->StrDesc();
+    if (methDesc == "hnsw3" || methDesc == "hnsw4") {
+      //clear data_ to keep consistency (All elements have been already deleted in CreateIndex().)
+      LOG(LIB_INFO) << "Clear DataPoints for saving memory (" << methDesc << ").";
+      data_.clear();
+    }
+  }
+
   void SaveIndex(const string& fileName) override {
     index_->SaveIndex(fileName);
   }
@@ -790,11 +835,30 @@ class IndexWrapper : public IndexWrapperBase {
   void LoadIndex(const string& fileName) override {
     // Delete previously created index
     delete index_;
+    if (data_.size() > 0) {
+      LOG(LIB_INFO) << "The other data were deleted before LoadIndex().";
+      data_.clear();
+    }
     index_ = MethodFactoryRegistry<dist_t>::Instance()
         .CreateMethod(PRINT_PROGRESS,
                       method_name_, space_type_,
                       *space_, data_);
     index_->LoadIndex(fileName);
+  }
+
+  void AddDataPointUnoptimizeIndex() override {
+    // Check optimized or not
+    string methDesc = index_->StrDesc();
+    if (methDesc != "hnsw3" && methDesc != "hnsw4") {
+      raise << "The index is not optimized.";
+      return;
+    }
+
+    if (data_.size() > 0) {
+      LOG(LIB_INFO) << "The other data were deleted before AddDataPointUnoptimizeIndex().";
+      data_.clear();
+    }
+    index_->UnoptimizeIndex(data_);
   }
 
   void SetQueryTimeParams(const AnyParams& p) override {
@@ -1201,6 +1265,33 @@ PyObject* addDataPointBatch(PyObject* self, PyObject* args) {
   return index->AddDataPointBatch(ids, data);
 }
 
+PyObject* addDataPointUnoptimizeIndex(PyObject* self, PyObject* args) {
+  PyObject* ptr;
+  if (!PyArg_ParseTuple(args, "O", &ptr)) {
+    raise << "Error reading parameters (expecting: index ref)";
+    return NULL;
+  }
+  IndexWrapperBase* index = reinterpret_cast<IndexWrapperBase*>(
+      PyLong_AsVoidPtr(ptr));
+Py_BEGIN_ALLOW_THREADS
+  index->AddDataPointUnoptimizeIndex();
+Py_END_ALLOW_THREADS
+  Py_RETURN_NONE;
+}
+
+PyObject* disableDataPoint(PyObject* self, PyObject* args) {
+  PyObject* ptr;
+  int       id;
+  if (!PyArg_ParseTuple(args, "Oi", &ptr, &id)) {
+    raise << "Error reading parameters (expecting: index ref, object index)";
+    return NULL;
+  }
+  IndexWrapperBase* index = reinterpret_cast<IndexWrapperBase*>(
+      PyLong_AsVoidPtr(ptr));
+  index->DisableDataPoint(id);
+  Py_RETURN_NONE;
+}
+
 PyObject* createIndex(PyObject* self, PyObject* args) {
   PyObject*     ptr;
   PyListObject* param_list;
@@ -1217,6 +1308,26 @@ PyObject* createIndex(PyObject* self, PyObject* args) {
       PyLong_AsVoidPtr(ptr));
 Py_BEGIN_ALLOW_THREADS
   index->CreateIndex(index_params);
+Py_END_ALLOW_THREADS
+  Py_RETURN_NONE;
+}
+
+PyObject* recreateIndex(PyObject* self, PyObject* args) {
+  PyObject*     ptr;
+  PyListObject* param_list;
+  if (!PyArg_ParseTuple(args, "OO!", &ptr, &PyList_Type, &param_list)) {
+    raise << "Error reading parameters (expecting: index ref, parameter list)";
+    return NULL;
+  }
+  StringVector index_params;
+  if (!readList(param_list, index_params, PyString_AsString)) {
+    raise << "Cannot convert an argument to a list";
+    return NULL;
+  }
+  IndexWrapperBase* index = reinterpret_cast<IndexWrapperBase*>(
+      PyLong_AsVoidPtr(ptr));
+Py_BEGIN_ALLOW_THREADS
+  index->RecreateIndex(index_params);
 Py_END_ALLOW_THREADS
   Py_RETURN_NONE;
 }

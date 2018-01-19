@@ -52,6 +52,10 @@ class Index {
 public:
   // Create an index using given parameters
   virtual void CreateIndex(const AnyParams& indexParams) = 0;
+  // Unoptimize index to be reused for CreateIndex()
+  virtual void UnoptimizeIndex(ObjectVector& data) {
+    throw runtime_error("UnoptimizeIndex is not implemented for method: " + StrDesc());
+  }
   // SaveIndex is not necessarily implemented
   virtual void SaveIndex(const string& location) {
     throw runtime_error("SaveIndex is not implemented for method: " + StrDesc());
