@@ -28,6 +28,10 @@ Changes
 
 * Optimize createIndex() of hnsw, for more stable processing time.
 
+* nmslib_vector.knnQueryScore() is added by expanding nmslib_vector.knnQuery(). It retuns also internal score with the index position.
+* nmslib_vector.knnIndexScore() is added. Its search key is the index position instead of data.
+* nmslib_vector.getDataPointLabel() is added. It gets label value (level in the hnsw index at this branch) for the index position.
+
 --------(start original README.md from HERE)--------
 
 =================

@@ -460,6 +460,14 @@ namespace similarity {
     }
 
     template <typename dist_t>
+    const Object* Hnsw<dist_t>::GetInternalObject(IdType objId) {
+        if (objId < 0 || objId >= data_rearranged_.size()) {
+            return nullptr;
+        }
+        return data_rearranged_[objId];
+    }
+
+    template <typename dist_t>
     const std::string Hnsw<dist_t>::StrDesc() const {
         return METH_HNSW + ConvertToString(searchMethod_);
     }

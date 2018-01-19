@@ -493,6 +493,8 @@ namespace similarity {
         void Search(KNNQuery<dist_t>* query, IdType startObj) const override;
 
         void SetQueryTimeParams(const AnyParams&) override;
+
+        const Object* GetInternalObject(IdType objId) override;
     private:
 
 

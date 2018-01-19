@@ -83,6 +83,8 @@ public:
    */
   virtual bool DuplicateData() const { return false; }
 
+  virtual const Object* GetInternalObject(IdType objId) { return nullptr; }
+
 private:
   template <typename QueryType>
   void GenericSearch(QueryType* query, IdType) const;

@@ -64,9 +64,12 @@ static PyMethodDef nmslibMethods[] = {
   {"loadIndex", loadIndex, METH_VARARGS},
   {"setQueryTimeParams", setQueryTimeParams, METH_VARARGS},
   {"knnQuery", knnQuery, METH_VARARGS},
+  {"knnQueryScore", knnQueryScore, METH_VARARGS},
+  {"knnIndexScore", knnIndexScore, METH_VARARGS},
   {"knnQueryBatch", knnQueryBatch, METH_VARARGS},
   {"getDataPoint", getDataPoint, METH_VARARGS},
   {"getDataPointQty", getDataPointQty, METH_VARARGS},
+  {"getDataPointLabel", getDataPointLabel, METH_VARARGS},
   {"freeIndex", freeIndex, METH_VARARGS},
   {NULL, NULL}
 };
@@ -684,11 +687,14 @@ class IndexWrapperBase {
 
   virtual const BoolObject ReadObject(int id, PyObject* data, int label) = 0;
   virtual const BoolPyObject WriteObject(size_t index) = 0;
+  virtual const BoolPyObject WriteLabel(size_t index) = 0;
   virtual void CreateIndex(const AnyParams& index_params) = 0;
   virtual void SaveIndex(const string& fileName) = 0;
   virtual void LoadIndex(const string& fileName) = 0;
   virtual void SetQueryTimeParams(const AnyParams& p) = 0;
   virtual PyObject* KnnQuery(int k, const Object* query, IdType level) = 0;
+  virtual PyObject* KnnQueryScore(int k, const Object* query, IdType level) = 0;
+  virtual PyObject* KnnIndexScore(int k, int idx, IdType level) = 0;
   virtual std::vector<IntVector> KnnQueryBatch(const int num_threads,
                                                const int k,
                                                const ObjectVector& query_objects) = 0;
@@ -734,6 +740,31 @@ class IndexWrapper : public IndexWrapperBase {
 
   const BoolPyObject WriteObject(size_t index) override {
     return writeObject(data_type_, space_, data_[index]);
+  }
+
+  const BoolPyObject WriteLabel(size_t index) override {
+    string methDesc = index_->StrDesc();
+    PyObject* v = nullptr;
+    if (methDesc == "hnsw3" || methDesc == "hnsw4") {
+      //needs to access the internal objects...
+      const Object* obj = index_->GetInternalObject(index);
+      if (!obj) {
+        raise << "The data point has problem at index:" << index;
+        return std::make_pair(false, nullptr);
+      }
+      v = PyInt_FromLong(obj->label());
+    } else {
+      if (index < 0 || index >= data_.size()) {
+        raise << "The data point index should be >= 0 & < " << data_.size();
+        return std::make_pair(false, nullptr);
+      }
+      v = PyInt_FromLong(data_[index]->label());
+    }
+
+    if (!v) {
+      return std::make_pair(false, nullptr);
+    }
+    return std::make_pair(true, v);
   }
 
   void CreateIndex(const AnyParams& index_params) override {
@@ -794,6 +825,100 @@ Py_END_ALLOW_THREADS
         return NULL;
       }
       PyList_SET_ITEM(z, i, v);
+    }
+    return z;
+  }
+
+  PyObject* KnnQueryScore(int k, const Object* query, IdType level) override {
+    IntVector ids;
+    FloatVector scores;
+Py_BEGIN_ALLOW_THREADS
+    KNNQueue<dist_t>* res;
+    KNNQuery<dist_t> knn(*space_, query, k);
+    index_->Search(&knn, level);
+    res = knn.Result()->Clone();
+    while (!res->Empty()) {
+      ids.insert(ids.begin(), res->TopObject()->id());
+      scores.insert(scores.begin(), knn.DistanceObjLeft(res->TopObject()));
+      res->Pop();
+    }
+    delete res;
+Py_END_ALLOW_THREADS
+    PyObject* z = PyList_New(ids.size());
+    if (!z) {
+      return NULL;
+    }
+    for (size_t i = 0; i < ids.size(); ++i) {
+      PyObject* v = PyInt_FromLong(ids[i]);
+      if (!v) {
+        Py_DECREF(z);
+        return NULL;
+      }
+      PyObject* s = PyFloat_FromDouble(scores[i]);
+      if (!s) {
+        Py_DECREF(v);
+        Py_DECREF(z);
+        return NULL;
+      }
+      PyObject* t = PyTuple_Pack(2, v, s);
+      Py_DECREF(v);
+      Py_DECREF(s);
+      PyList_SET_ITEM(z, i, t);
+    }
+    return z;
+  }
+
+  PyObject* KnnIndexScore(int k, int idx, IdType level) override {
+    string methDesc = index_->StrDesc();
+    const Object* query;
+    if (methDesc == "hnsw3" || methDesc == "hnsw4") {
+      //needs to access to the internal objects
+      query = index_->GetInternalObject(idx);
+      if (!query) {
+        raise << "The data point has problem at index:" << idx;
+        return NULL;
+      }
+    } else {
+      if (idx < 0 || idx >= data_.size()) {
+        raise << "The data point index should be >= 0 & < " << data_.size();
+        return NULL;
+      }
+      query = data_[idx];
+    }
+    IntVector ids;
+    FloatVector scores;
+Py_BEGIN_ALLOW_THREADS
+    KNNQueue<dist_t>* res;
+    KNNQuery<dist_t> knn(*space_, query, k);
+    index_->Search(&knn, level);
+    res = knn.Result()->Clone();
+    while (!res->Empty()) {
+      ids.insert(ids.begin(), res->TopObject()->id());
+      scores.insert(scores.begin(), knn.DistanceObjLeft(res->TopObject()));
+      res->Pop();
+    }
+    delete res;
+Py_END_ALLOW_THREADS
+    PyObject* z = PyList_New(ids.size());
+    if (!z) {
+      return NULL;
+    }
+    for (size_t i = 0; i < ids.size(); ++i) {
+      PyObject* v = PyInt_FromLong(ids[i]);
+      if (!v) {
+        Py_DECREF(z);
+        return NULL;
+      }
+      PyObject* s = PyFloat_FromDouble(scores[i]);
+      if (!s) {
+        Py_DECREF(v);
+        Py_DECREF(z);
+        return NULL;
+      }
+      PyObject* t = PyTuple_Pack(2, v, s);
+      Py_DECREF(v);
+      Py_DECREF(s);
+      PyList_SET_ITEM(z, i, t);
     }
     return z;
   }
@@ -1174,6 +1299,55 @@ PyObject* knnQuery(PyObject* self, PyObject* args) {
   return index->KnnQuery(k, query_obj.get(), level);
 }
 
+PyObject* knnQueryScore(PyObject* self, PyObject* args) {
+  PyObject* ptr;
+  int k;
+  PyObject* data;
+  IdType level = 0;
+  if (!PyArg_ParseTuple(args, "OiO|i", &ptr, &k, &data, &level)) {
+    raise << "Error reading parameters (expecting: index ref, K as in-KNN, query)";
+    return NULL;
+  }
+  if (k < 1) {
+    raise << "k (" << k << ") should be >=1";
+    return NULL;
+  }
+  IndexWrapperBase* index = reinterpret_cast<IndexWrapperBase*>(
+      PyLong_AsVoidPtr(ptr));
+  if (index->GetDataType() != kDataDenseVector &&
+      index->GetDataType() != kDataSparseVector &&
+      index->GetDataType() != kDataObjectAsString) {
+    raise << "unknown data type - " << index->GetDataType();
+    return NULL;
+  }
+  auto res = index->ReadObject(0, data, -1);
+  std::unique_ptr<const Object> query_obj(res.second);
+  return index->KnnQueryScore(k, query_obj.get(), level);
+}
+
+PyObject* knnIndexScore(PyObject* self, PyObject* args) {
+  PyObject* ptr;
+  int k, idx;
+  IdType level = 0;
+  if (!PyArg_ParseTuple(args, "Oii|i", &ptr, &k, &idx, &level)) {
+    raise << "Error reading parameters (expecting: index ref, K as in-KNN, index)";
+    return NULL;
+  }
+  if (k < 1) {
+    raise << "k (" << k << ") should be >=1";
+    return NULL;
+  }
+  IndexWrapperBase* index = reinterpret_cast<IndexWrapperBase*>(
+      PyLong_AsVoidPtr(ptr));
+  if (index->GetDataType() != kDataDenseVector &&
+      index->GetDataType() != kDataSparseVector &&
+      index->GetDataType() != kDataObjectAsString) {
+    raise << "unknown data type - " << index->GetDataType();
+    return NULL;
+  }
+  return index->KnnIndexScore(k, idx, level);
+}
+
 PyObject* knnQueryBatch(PyObject* self, PyObject* args) {
   PyObject* ptr;
   int num_threads;
@@ -1207,6 +1381,22 @@ PyObject* getDataPoint(PyObject* self, PyObject* args) {
     return NULL;
   }
   auto res = index->WriteObject(id);
+  if (!res.first) {
+    return NULL;
+  }
+  return res.second;
+}
+
+PyObject* getDataPointLabel(PyObject* self, PyObject* args) {
+  PyObject* ptr;
+  int       id;
+  if (!PyArg_ParseTuple(args, "Oi", &ptr, &id)) {
+    raise << "Error reading parameters (expecting: index ref, object index)";
+    return NULL;
+  }
+  IndexWrapperBase* index = reinterpret_cast<IndexWrapperBase*>(
+      PyLong_AsVoidPtr(ptr));
+  auto res = index->WriteLabel(id);
   if (!res.first) {
     return NULL;
   }
