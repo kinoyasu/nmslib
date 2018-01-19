@@ -26,6 +26,8 @@ Changes
 
 * nmslib_vector.addDataPoint() : Added optional parameter to specify "label" integer in Object. It is used to indicate level of the datapoint in the index rather than random, in hnsw index.
 
+* Optimize createIndex() of hnsw, for more stable processing time.
+
 --------(start original README.md from HERE)--------
 
 =================

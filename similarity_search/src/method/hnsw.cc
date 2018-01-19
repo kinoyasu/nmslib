@@ -83,12 +83,12 @@ namespace similarity {
         for (size_t i = 0; i < list.size(); i++) {
             for (size_t j = 0; j < list[i]->allFriends[0].size(); j++) {
                 for (size_t k = j+1; k < list[i]->allFriends[0].size(); k++) {
-                    if (list[i]->allFriends[0][j] == list[i]->allFriends[0][k]) {
+                    if (list[i]->allFriends[0][j].second == list[i]->allFriends[0][k].second) {
                         cout << "\nDuplicate links\n\n\n\n\n!!!!!";
                         ok = 0;
                     }
                 }
-                if (list[i]->allFriends[0][j] == list[i]) {
+                if (list[i]->allFriends[0][j].second == list[i]) {
                     cout << "\nLink to the same element\n\n\n\n\n!!!!!";
                     ok = 0;
                 }
@@ -116,9 +116,9 @@ namespace similarity {
         vector<int> inconnections = vector<int>(list.size());
         vector<int> outconnections = vector<int>(list.size());
         for (size_t i = 0; i < list.size();i++) {
-            for (HnswNode* node : list[i]->allFriends[0]) {
+            for (pair<float, HnswNode*> node : list[i]->allFriends[0]) {
                 outconnections[list[i]->getId()]++;
-                inconnections[node->getId()]++;
+                inconnections[node.second->getId()]++;
             }            
         }
         
@@ -234,18 +234,18 @@ namespace similarity {
             for (int id = 1; id < data_.size(); ++id) {
                 HnswNode* node1 = ElList_[id];
                 HnswNode* node2 = temp[id];
-                vector<HnswNode *> f1 = node1->getAllFriends(0);
-                vector<HnswNode *> f2 = node2->getAllFriends(0);
+                vector<pair<float, HnswNode *>> f1 = node1->getAllFriends(0);
+                vector<pair<float, HnswNode *>> f2 = node2->getAllFriends(0);
                 unordered_set<size_t> intersect = unordered_set<size_t>();
-                for (HnswNode *cur : f1) {
-                    intersect.insert(cur->getId());
+                for (pair<float, HnswNode *>cur : f1) {
+                    intersect.insert(cur.second->getId());
                 }
-                for (HnswNode *cur : f2) {
-                    intersect.insert(cur->getId());
+                for (pair<float, HnswNode *>cur : f2) {
+                    intersect.insert(cur.second->getId());
                 }
                 if (intersect.size() > maxF)
                     maxF = intersect.size();
-                vector<HnswNode *> rez = vector<HnswNode *>();
+                vector<pair<float, HnswNode *>> rez = vector<pair<float, HnswNode *>>();
                 
                 if (post_ == 2) {
                     priority_queue<HnswNodeDistCloser<dist_t>> resultSet;
@@ -267,7 +267,7 @@ namespace similarity {
                         break;
                     }                    
                     while (!resultSet.empty()) {
-                        rez.push_back(resultSet.top().getMSWNodeHier());                        
+                        rez.push_back(make_pair(resultSet.top().getDistance(), resultSet.top().getMSWNodeHier()));
                         resultSet.pop();
                     }
                 }
@@ -276,7 +276,8 @@ namespace similarity {
                     maxM0_ = maxF;
 
                     for (int cur : intersect) {
-                        rez.push_back(ElList_[cur]);
+                        //NOTE: distance is dummy
+                        rez.push_back(make_pair(0.0, ElList_[cur]));
                     }
                 }
 
@@ -506,19 +507,24 @@ namespace similarity {
                 while (changed) {
                     changed = false;
                     unique_lock<mutex>  lock(curNode->accessGuard_);
-                    const vector<HnswNode*>& neighbor = curNode->getAllFriends(level);
+                    const vector<pair<float, HnswNode*>>& neighbor = curNode->getAllFriends(level);
                     int size = neighbor.size();
-                    for (int i = 0; i < size; i++) {
-                        HnswNode *node = neighbor[i];
-                        _mm_prefetch((char *)(node)->getData(), _MM_HINT_T0);
-                    }
                     for (int i = 0; i < size; i++)
                     {
-                        currObj = (neighbor[i])->getData();
+                        if (i + 1 < size) {
+                            HnswNode *node = neighbor[i + 1].second;
+                            _mm_prefetch((char *)(node->getData()), _MM_HINT_T0);
+                        }
+                        if (i + 2 < size) {
+                            HnswNode *node = neighbor[i + 2].second;
+                            _mm_prefetch((char *)node, _MM_HINT_T0);
+                        }
+
+                        currObj = (neighbor[i].second)->getData();
                         d = space->IndexTimeDistance(NewElement->getData(), currObj);
                         if (d < curdist) {
                             curdist = d;
-                            curNode = neighbor[i];
+                            curNode = neighbor[i].second;
                             changed = true;
                         }
                     }
@@ -550,7 +556,7 @@ namespace similarity {
                 break;
             }
             while (!resultSet.empty()) {
-                link(resultSet.top().getMSWNodeHier(), NewElement, level, space, delaunay_type_);
+                link(resultSet.top().getDistance(), resultSet.top().getMSWNodeHier(), NewElement, level, space, delaunay_type_);
                 resultSet.pop();
             }
 
@@ -620,34 +626,40 @@ namespace similarity {
             * while we are accessing elements of currNode.
             */
             unique_lock<mutex>  lock(currNode->accessGuard_);
-            const vector<HnswNode*>& neighbor = currNode->getAllFriends(level);
+            const vector<pair<float, HnswNode*>>& neighbor = currNode->getAllFriends(level);
 
             // Can't access curEv anymore! The reference would become invalid
             candidateSet.pop();
 
             // calculate distance to each neighbor
             for (auto iter = neighbor.begin(); iter != neighbor.end(); ++iter) {
-                _mm_prefetch((char *)(*iter)->getData(), _MM_HINT_T0);
+#if USE_BITSET_FOR_INDEXING
+                size_t nodeId = (*iter).second->getId();
+                if (mass[nodeId] != curV)
+#else
+                if (visited.find((*iter).second) == visited.end())
+#endif
+                    _mm_prefetch((char *)(*iter).second->getData(), _MM_HINT_T0);
             }
 
             for (auto iter = neighbor.begin(); iter != neighbor.end(); ++iter) {
 #if USE_BITSET_FOR_INDEXING
-                size_t nodeId = (*iter)->getId();
+                size_t nodeId = (*iter).second->getId();
                 if (mass[nodeId] != curV) {
                     mass[nodeId] = curV;
 #else
-                if (visited.find((*iter)) == visited.end()) {
-                    visited.insert(*iter);
+                if (visited.find((*iter).second) == visited.end()) {
+                    visited.insert((*iter).second);
 #endif
-                    d = space->IndexTimeDistance(queryObj, (*iter)->getData());
-                    HnswNodeDistFarther<dist_t> evE1(d, *iter);
+                    d = space->IndexTimeDistance(queryObj, (*iter).second->getData());
+                    HnswNodeDistFarther<dist_t> evE1(d, (*iter).second);
         
 #if EXTEND_USE_EXTENDED_NEIGHB_AT_CONSTR!=0
-                    fullResultSet.emplace(d, *iter);
+                    fullResultSet.emplace(d, (*iter).second);
 #endif
         
                     if (resultSet.size() < efConstruction || resultSet.top().getDistance() > d) {
-                        resultSet.emplace(d, *iter);
+                        resultSet.emplace(d, (*iter).second);
                         candidateSet.push(evE1);
                         if (resultSet.size() > efConstruction) {
                             resultSet.pop();
@@ -836,16 +848,16 @@ namespace similarity {
     			while (changed) {
     				changed = false;
     
-    				const vector<HnswNode*>& neighbor = curNode->getAllFriends(i);
+    				const vector<pair<float, HnswNode*>>& neighbor = curNode->getAllFriends(i);
     				for (auto iter = neighbor.begin(); iter != neighbor.end(); ++iter) {
-    					_mm_prefetch((char *)(*iter)->getData(), _MM_HINT_T0);
+    					_mm_prefetch((char *)(*iter).second->getData(), _MM_HINT_T0);
     				}
     				for (auto iter = neighbor.begin(); iter != neighbor.end(); ++iter) {
-    					currObj = (*iter)->getData();
+    					currObj = (*iter).second->getData();
     					d = query->DistanceObjLeft(currObj);
     					if (d < curdist) {
     						curdist = d;
-    						curNode = *iter;
+    						curNode = (*iter).second;
     						changed = true;
     					}
     				}
@@ -882,29 +894,29 @@ namespace similarity {
     			HnswNode *initNode = currEv.getMSWNodeHier();
     			candidateQueue.pop();
     
-    			const vector<HnswNode*>& neighbor = (initNode)->getAllFriends(0);
+    			const vector<pair<float, HnswNode*>>& neighbor = (initNode)->getAllFriends(0);
     
     			size_t curId;
     
     			for (auto iter = neighbor.begin(); iter != neighbor.end(); ++iter) {
-    				_mm_prefetch((char *)(*iter)->getData(), _MM_HINT_T0);
-    				_mm_prefetch((char *)(massVisited + (*iter)->getId()), _MM_HINT_T0);
+    				_mm_prefetch((char *)(*iter).second->getData(), _MM_HINT_T0);
+    				_mm_prefetch((char *)(massVisited + (*iter).second->getId()), _MM_HINT_T0);
     			}
     			//calculate distance to each neighbor
     			for (auto iter = neighbor.begin(); iter != neighbor.end(); ++iter) {
     
-    				curId = (*iter)->getId();
+    				curId = (*iter).second->getId();
     				
     				if (!(massVisited[curId] == currentV))
     				{
     					massVisited[curId] = currentV;
-    					currObj = (*iter)->getData();
+    					currObj = (*iter).second->getData();
     					d = query->DistanceObjLeft(currObj);
     					if (closestDistQueue1.top().getDistance() > d || closestDistQueue1.size() < ef_) {
     						{
     							query->CheckAndAddToResult(d, currObj);    
-    							candidateQueue.emplace(d, *iter);
-    							closestDistQueue1.emplace(d, *iter);
+    							candidateQueue.emplace(d, (*iter).second);
+    							closestDistQueue1.emplace(d, (*iter).second);
     							if (closestDistQueue1.size() > ef_) {
     								closestDistQueue1.pop();
     							}
@@ -938,16 +950,16 @@ void Hnsw<dist_t>::baseSearchAlgorithmV1Merge(KNNQuery<dist_t> *query) {
     while (changed) {
       changed = false;
 
-      const vector<HnswNode*>& neighbor = curNode->getAllFriends(i);
+      const vector<pair<float, HnswNode*>>& neighbor = curNode->getAllFriends(i);
       for (auto iter = neighbor.begin(); iter != neighbor.end(); ++iter) {
-        _mm_prefetch((char *)(*iter)->getData(), _MM_HINT_T0);
+        _mm_prefetch((char *)(*iter).second->getData(), _MM_HINT_T0);
       }
       for (auto iter = neighbor.begin(); iter != neighbor.end(); ++iter) {
-        currObj = (*iter)->getData();
+        currObj = (*iter).second->getData();
         d = query->DistanceObjLeft(currObj);
         if (d < curdist) {
           curdist = d;
-          curNode = *iter;
+          curNode = (*iter).second;
           changed = true;
         }
       }
@@ -982,27 +994,27 @@ void Hnsw<dist_t>::baseSearchAlgorithmV1Merge(KNNQuery<dist_t> *query) {
     size_t itemQty = 0;
     dist_t topKey = sortedArr.top_key();
 
-    const vector<HnswNode*>& neighbor = (initNode)->getAllFriends(0);
+    const vector<pair<float, HnswNode*>>& neighbor = (initNode)->getAllFriends(0);
 
     size_t curId;
 
     for (auto iter = neighbor.begin(); iter != neighbor.end(); ++iter) {
-      _mm_prefetch((char *)(*iter)->getData(), _MM_HINT_T0);
-      _mm_prefetch((char *)(massVisited + (*iter)->getId()), _MM_HINT_T0);
+      _mm_prefetch((char *)(*iter).second->getData(), _MM_HINT_T0);
+      _mm_prefetch((char *)(massVisited + (*iter).second->getId()), _MM_HINT_T0);
     }
     //calculate distance to each neighbor
     for (auto iter = neighbor.begin(); iter != neighbor.end(); ++iter) {
 
-      curId = (*iter)->getId();
+      curId = (*iter).second->getId();
 
       if (!(massVisited[curId] == currentV))
       {
         massVisited[curId] = currentV;
-        currObj = (*iter)->getData();
+        currObj = (*iter).second->getData();
         d = query->DistanceObjLeft(currObj);
 
         if (d < topKey || sortedArr.size() < ef_) {
-          itemBuff[itemQty++]=QueueItem(d, *iter);
+          itemBuff[itemQty++]=QueueItem(d, (*iter).second);
         }
       }
     }
@@ -1086,25 +1098,25 @@ void Hnsw<dist_t>::baseSearchAlgorithmV1Merge(KNNQuery<dist_t> *query) {
     				HnswNode *initNode = currEv.getMSWNodeHier();
     				candidateQueue.pop();
     
-    				const vector<HnswNode*>& neighbor = (initNode)->getAllFriends(i);
+    				const vector<pair<float, HnswNode*>>& neighbor = (initNode)->getAllFriends(i);
     
     				size_t curId;
     
     				for (auto iter = neighbor.begin(); iter != neighbor.end(); ++iter) {
-    					_mm_prefetch((char *)(*iter)->getData(), _MM_HINT_T0);
-    					_mm_prefetch((char *)(massVisited + (*iter)->getId()), _MM_HINT_T0);
+    					_mm_prefetch((char *)(*iter).second->getData(), _MM_HINT_T0);
+    					_mm_prefetch((char *)(massVisited + (*iter).second->getId()), _MM_HINT_T0);
     				}
     				//calculate distance to each neighbor
     				for (auto iter = neighbor.begin(); iter != neighbor.end(); ++iter) {    
-    					curId = (*iter)->getId();
+    					curId = (*iter).second->getId();
     					if (!(massVisited[curId] == currentV))
     					{
     						massVisited[curId] = currentV;
-    						currObj = (*iter)->getData();
+    						currObj = (*iter).second->getData();
     						d = query->DistanceObjLeft(currObj);
                             if (closestDistQueue.top().getDistance() > d || closestDistQueue.size() < efSearchL) {
-                                candidateQueue.emplace(d, *iter);
-                                closestDistQueue.emplace(d, *iter);
+                                candidateQueue.emplace(d, (*iter).second);
+                                closestDistQueue.emplace(d, (*iter).second);
                                 if (closestDistQueue.size() > efSearchL) {
                                     closestDistQueue.pop();
                                 }
@@ -1159,28 +1171,28 @@ void Hnsw<dist_t>::baseSearchAlgorithmV1Merge(KNNQuery<dist_t> *query) {
     			HnswNode *initNode = currEv.getMSWNodeHier();
     			candidateQueue.pop();
     
-    			const vector<HnswNode*>& neighbor = (initNode)->getAllFriends(0);
+    			const vector<pair<float, HnswNode*>>& neighbor = (initNode)->getAllFriends(0);
     
     			size_t curId;
     
     			for (auto iter = neighbor.begin(); iter != neighbor.end(); ++iter) {
-    				_mm_prefetch((char *)(*iter)->getData(), _MM_HINT_T0);
-    				_mm_prefetch((char *)(massVisited + (*iter)->getId()), _MM_HINT_T0);
+    				_mm_prefetch((char *)(*iter).second->getData(), _MM_HINT_T0);
+    				_mm_prefetch((char *)(massVisited + (*iter).second->getId()), _MM_HINT_T0);
     			}
     			//calculate distance to each neighbor
     			for (auto iter = neighbor.begin(); iter != neighbor.end(); ++iter) {
     
-    				curId = (*iter)->getId();
+    				curId = (*iter).second->getId();
     				if (!(massVisited[curId] == currentV))
     				{
     					massVisited[curId] = currentV;
-    					currObj = (*iter)->getData();
+    					currObj = (*iter).second->getData();
     					d = query->DistanceObjLeft(currObj);
     					if (closestDistQueue.top().getDistance() > d || closestDistQueue.size() < ef_) {
     						{
     							query->CheckAndAddToResult(d, currObj);
-    							candidateQueue.emplace(d, *iter);
-    							closestDistQueue.emplace(d, *iter);
+    							candidateQueue.emplace(d, (*iter).second);
+    							closestDistQueue.emplace(d, (*iter).second);
     							if (closestDistQueue.size() > ef_) {
     								closestDistQueue.pop();
     							}

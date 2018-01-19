@@ -179,8 +179,8 @@ namespace similarity {
             {
                 //inputCopy[i] = resultSet1.top();
                 candidates.insert(resultSet1.top().getMSWNodeHier());
-                for(HnswNode* n: resultSet1.top().getMSWNodeHier()->getAllFriends(level))
-                    candidates.insert(n);
+                for(pair<float, HnswNode*> n: resultSet1.top().getMSWNodeHier()->getAllFriends(level))
+                    candidates.insert(n.second);
                 resultSet1.pop();
             }
             for (HnswNode *n : candidates) {
@@ -263,15 +263,15 @@ namespace similarity {
 
 
         template <typename dist_t>
-        void addFriendlevel(int level, HnswNode* element, const Space<dist_t>* space, int delaunay_type) {
+        void addFriendlevel(int level, dist_t distance, HnswNode* element, const Space<dist_t>* space, int delaunay_type) {
 
             unique_lock<mutex> lock(accessGuard_);
             for (int i = 0; i < allFriends[level].size(); i++)
-                if (allFriends[level][i] == element) {
+                if (allFriends[level][i].second == element) {
                     cerr << "This should not happen. For some reason the elements is already added";
                     return;
                 }
-            allFriends[level].push_back(element);
+            allFriends[level].push_back(make_pair(distance, element));
             bool shrink = false;
             if (level > 0)
                 if (allFriends[level].size() > maxsize)
@@ -289,7 +289,7 @@ namespace similarity {
                     priority_queue<HnswNodeDistCloser<dist_t>> resultSet;
                     //for (int i = 1; i < allFriends[level].size(); i++) {
                     for (int i = 0; i < allFriends[level].size(); i++) {
-                        resultSet.emplace(space->IndexTimeDistance(this->getData(), allFriends[level][i]->getData()), allFriends[level][i]);
+                        resultSet.emplace(allFriends[level][i].first, allFriends[level][i].second);
                     }
                     if (delaunay_type == 1)
                         this->getNeighborsByHeuristic1(resultSet, resultSet.size() - 1, space);
@@ -300,17 +300,17 @@ namespace similarity {
                     allFriends[level].clear();
 
                     while (resultSet.size()) {
-                        allFriends[level].push_back(resultSet.top().getMSWNodeHier());
+                        allFriends[level].push_back(make_pair(resultSet.top().getDistance(), resultSet.top().getMSWNodeHier()));
                         resultSet.pop();
 
                     }
                 }
                 else {
-                    dist_t max = space->IndexTimeDistance(this->getData(), allFriends[level][0]->getData());
+                    dist_t max = allFriends[level][0].first;
                     int maxi = 0;
                     for (int i = 1; i < allFriends[level].size(); i++) {
 
-                        dist_t curd = space->IndexTimeDistance(this->getData(), allFriends[level][i]->getData());
+                        dist_t curd = allFriends[level][i].first;
                         if (curd > max) {
                             max = curd;
                             maxi = i;
@@ -349,7 +349,7 @@ namespace similarity {
         *((int *)(memt)) = (int)allFriends[0].size();
         memt += sizeof(int);
         for (size_t j = 0; j < allFriends[0].size(); j++) {
-            *((int *)(memt)) = (int)allFriends[0][j]->getId();
+            *((int *)(memt)) = (int)allFriends[0][j].second->getId();
             memt += sizeof(int);
         }
         mem = mem1 + offsetData;
@@ -372,7 +372,7 @@ namespace similarity {
 
             memt += sizeof(int);
             for (size_t j = 0; j < allFriends[i].size(); j++) {
-                *((int *)(memt)) = (int)allFriends[i][j]->getId();
+                *((int *)(memt)) = (int)allFriends[i][j].second->getId();
                 memt += sizeof(int);
             }
             memlevels += (1 + maxsize)* sizeof(int);
@@ -383,7 +383,7 @@ namespace similarity {
                 return data_;
             }
             size_t getId() const { return id_; }
-            const vector<HnswNode*>& getAllFriends(int level) const {
+            const vector<pair<float, HnswNode*>>& getAllFriends(int level) const {
                 return allFriends[level];
             }
 
@@ -393,7 +393,7 @@ namespace similarity {
     private:
         const Object*       data_;
     public:size_t              id_;
-           vector<vector<HnswNode*>> allFriends;
+           vector<vector<pair<float, HnswNode*>>> allFriends;
 
            int maxsize0;
            int maxsize;
@@ -523,10 +523,10 @@ namespace similarity {
         void add(const Space<dist_t>* space, HnswNode *newElement);
         void addToElementListSynchronized(HnswNode *newElement);
 
-        void link(HnswNode* first, HnswNode* second, int level, const Space<dist_t>* space, int delaunay_type) {
+        void link(dist_t distance, HnswNode* first, HnswNode* second, int level, const Space<dist_t>* space, int delaunay_type) {
             // We have to pass the Space, since we need to know what elements can be deleted from the list
-            first->addFriendlevel(level, second, space, delaunay_type);
-            second->addFriendlevel(level, first, space, delaunay_type);
+            first->addFriendlevel(level, distance, second, space, delaunay_type);
+            second->addFriendlevel(level, distance, first, space, delaunay_type);
         }
 
         //
