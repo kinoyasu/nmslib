@@ -298,6 +298,10 @@ namespace similarity {
 
         if (skip_optimized_index) {
           LOG(LIB_INFO) << "searchMethod			  = " << searchMethod_;
+          //feedback index level to label area
+          for (int i = 0; i < ElList_.size(); i++) {
+              *(ElList_[i]->getData()->label_ptr()) = ElList_[i]->level;
+          }
           pmgr.CheckUnused();
           return;
         }
@@ -355,6 +359,10 @@ namespace similarity {
             //if (searchMethod_ != 0 && searchMethod_ != 1)
                 searchMethod_ = 0;
             LOG(LIB_INFO) << "searchMethod			  = " << searchMethod_;
+            //feedback index level to label area
+            for (int i = 0; i < ElList_.size(); i++) {
+                *(ElList_[i]->getData()->label_ptr()) = ElList_[i]->level;
+            }
             pmgr.CheckUnused();
             return; // No optimized index
         }
