@@ -884,7 +884,125 @@ namespace similarity {
     template <typename dist_t>
     void Hnsw<dist_t>::SaveIndex(const string &location) {
         if (!data_level0_memory_)
-            throw runtime_error("Storing non-optimized index is not supported yet!");
+        {
+            LOG(LIB_INFO) << "Trying to output the storing non-optimized index as optimized...";
+            long dist_func_type_reserve = dist_func_type_;
+            size_t searchMethod_reserve = searchMethod_;
+            size_t memoryPerObject_reserve = memoryPerObject_;
+
+            std::ofstream output(location, std::ios::binary);
+
+            int friendsSectionSize = (maxM0_ + 1)*sizeof(int);
+
+            //Checking for maximum size of the datasection:
+            int dataSectionSize = 1;
+            for (int i = 0; i < ElList_.size(); i++) {
+                if (ElList_[i]->getData()->bufferlength()>dataSectionSize)
+                    dataSectionSize = ElList_[i]->getData()->bufferlength();
+            }
+
+            // Selecting custom made functions
+            if (space_.StrDesc().compare("SpaceLp: p = 2 do we have a special implementation for this p? : 1") == 0 && sizeof(dist_t) == 4)
+            {
+                LOG(LIB_INFO) << "\nThe space is Euclidean";
+                vectorlength_ = ((dataSectionSize - 16) >> 2);
+                LOG(LIB_INFO) << "Vector length=" << vectorlength_;
+                if (vectorlength_ % 16 == 0) {
+                    LOG(LIB_INFO) << "Thus using an optimised function for base 16";
+                    dist_func_type_ = 1;
+                    searchMethod_ = 3;
+                }
+                else {
+                    LOG(LIB_INFO) << "Thus using function with any base";
+                    dist_func_type_ = 2;
+                    searchMethod_ = 3;
+                }
+            }
+            else if (space_.StrDesc().compare("CosineSimilarity") == 0 && sizeof(dist_t) == 4)
+            {
+                LOG(LIB_INFO) << "\nThe vectorspace is Cosine Similarity";
+                vectorlength_ = ((dataSectionSize - 16) >> 2);
+                LOG(LIB_INFO) << "Vector length=" << vectorlength_;
+                iscosine_ = true;
+                if (vectorlength_ % 4 == 0) {
+                    LOG(LIB_INFO) << "Thus using an optimised function for base 4";
+                    dist_func_type_ = 3;
+                    searchMethod_ = 4;
+                }
+                else {
+                    LOG(LIB_INFO) << "Thus using function with any base";
+                    LOG(LIB_INFO) << "Search method 4 is not allowed in this case";
+                    dist_func_type_ = 3;
+                    searchMethod_ = 3;
+                }
+            }
+            else {
+                LOG(LIB_INFO) << "No appropriate custom distance function for " << space_.StrDesc();
+                throw runtime_error("Storing non-optimized index is not supported yet!");
+            }
+            LOG(LIB_INFO) << "searchMethod			  = " << searchMethod_;
+            memoryPerObject_ = ((dataSectionSize + friendsSectionSize + 15) >> 4) * 16;
+
+            writeBinaryPOD(output, (unsigned long)ElList_.size());
+            writeBinaryPOD(output, memoryPerObject_);
+            writeBinaryPOD(output, (size_t)dataSectionSize);
+            writeBinaryPOD(output, (size_t)0);
+            writeBinaryPOD(output, maxlevel_);
+            writeBinaryPOD(output, (unsigned long)enterpoint_->getId());
+            writeBinaryPOD(output, maxM_);
+            writeBinaryPOD(output, maxM0_);
+            writeBinaryPOD(output, dist_func_type_);
+            writeBinaryPOD(output, searchMethod_);
+
+            char *tmp_data;
+            tmp_data = (char*)malloc(memoryPerObject_);
+            const Object* tmp_obj;
+            tmp_obj = new Object(tmp_data);
+            for (long j = 0; j < ElList_.size(); j++) {
+                memset(tmp_data, 1, memoryPerObject_);
+                ElList_[j]->copyDataAndLevel0LinksToOptIndex(tmp_data, dataSectionSize, 0);
+                *(tmp_obj->label_ptr()) = ElList_[j]->level;
+                if (iscosine_ && j >= unoptimized_size_)
+                {
+                    float *v = (float *)(tmp_data + 16);
+                    float sum = 0;
+                    for (int i = 0; i < vectorlength_; i++) {
+                        sum += v[i] * v[i];
+                    }
+                    if (sum != 0.0) {
+                        sum = 1 / sqrt(sum);
+                        for (int i = 0; i < vectorlength_; i++) {
+                            v[i] *= sum;
+                        }
+                    }
+                }
+
+                output.write(tmp_data, memoryPerObject_);
+            }
+            delete tmp_obj;
+            free(tmp_data);
+
+            tmp_data = (char*)malloc(((maxlevel_)*(maxM_ + 1))*sizeof(int));
+            for (long i = 0; i < ElList_.size(); i++) {
+                SIZEMASS_TYPE sizemass = ((ElList_[i]->level)*(maxM_ + 1))*sizeof(int);
+                writeBinaryPOD(output, sizemass);
+                if((sizemass)) {
+                    memset(tmp_data, 2, sizemass);
+                    ElList_[i]->copyHigherLevelLinksToOptIndex(tmp_data, 0);
+                    output.write(tmp_data, sizemass);
+                }
+            }
+            free(tmp_data);
+
+            output.close();
+
+            //restore values of non-optimized
+            dist_func_type_ = dist_func_type_reserve;
+            searchMethod_ = searchMethod_reserve;
+            memoryPerObject_ = memoryPerObject_reserve;
+
+            return;
+        }
 
         std::ofstream output(location, std::ios::binary);
         streampos position;

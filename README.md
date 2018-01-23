@@ -34,6 +34,8 @@ Changes
 
 * nmslib_vector: addDataPointUnoptimizeIndex(), disableDataPoint(), recreateIndex() methods are added. They are used to recreate the already optimized hnsw index with deleting/adding DataPoints. **CAUTION:** The unoptimized index DataPoint entities still depend on the current hnsw index. Using createIndex() instead of recreateIndex() causes memory leak, becase createIndex() just deletes the current index.
 
+* Hnsw::SaveIndex() can save non-optimized index but as optimized index, for saving memory.
+
 --------(start original README.md from HERE)--------
 
 =================
