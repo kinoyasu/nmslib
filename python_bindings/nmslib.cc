@@ -61,6 +61,7 @@ static PyMethodDef nmslibMethods[] = {
   {"addDataPointBatch", addDataPointBatch, METH_VARARGS},
   {"addDataPointUnoptimizeIndex", addDataPointUnoptimizeIndex, METH_VARARGS},
   {"disableDataPoint", disableDataPoint, METH_VARARGS},
+  {"setDataPointLabel", setDataPointLabel, METH_VARARGS},
   {"createIndex", createIndex, METH_VARARGS},
   {"recreateIndex", recreateIndex, METH_VARARGS},
   {"saveIndex", saveIndex, METH_VARARGS},
@@ -691,7 +692,7 @@ class IndexWrapperBase {
   virtual const BoolObject ReadObject(int id, PyObject* data, int label) = 0;
   virtual const BoolPyObject WriteObject(size_t index) = 0;
   virtual const BoolPyObject WriteLabel(size_t index) = 0;
-  virtual void DisableDataPoint(size_t index) = 0;
+  virtual void ReadLabel(size_t index, int label) = 0;
   virtual void CreateIndex(const AnyParams& index_params) = 0;
   virtual void RecreateIndex(const AnyParams& index_params) = 0;
   virtual void SaveIndex(const string& fileName) = 0;
@@ -773,10 +774,12 @@ class IndexWrapper : public IndexWrapperBase {
     return std::make_pair(true, v);
   }
 
-  void DisableDataPoint(size_t index) override {
-    string methDesc = index_->StrDesc();
+  void ReadLabel(size_t index, int label) override {
+    string methDesc;
+    if (index_)
+      methDesc = index_->StrDesc();
     const Object* obj;
-    if (methDesc == "hnsw3" || methDesc == "hnsw4") {
+    if (index_ && (methDesc == "hnsw3" || methDesc == "hnsw4")) {
       //needs to access to the internal objects
       obj = index_->GetInternalObject(index);
       if (!obj) {
@@ -784,16 +787,13 @@ class IndexWrapper : public IndexWrapperBase {
         return;
       }
     } else {
-      raise << "disableDataPoint() is only for addDataPointUnoptimizeIndex(), for now." << index;
-      return;
-
       if (index < 0 || index >= data_.size()) {
         raise << "The data point index should be >= 0 & < " << data_.size();
         return;
       }
       obj = data_[index];
     }
-    *(obj->label_ptr()) = -256;
+    *(obj->label_ptr()) = label;
   }
 
   void CreateIndex(const AnyParams& index_params) override {
@@ -1288,7 +1288,21 @@ PyObject* disableDataPoint(PyObject* self, PyObject* args) {
   }
   IndexWrapperBase* index = reinterpret_cast<IndexWrapperBase*>(
       PyLong_AsVoidPtr(ptr));
-  index->DisableDataPoint(id);
+  index->ReadLabel(id, -256);
+  Py_RETURN_NONE;
+}
+
+PyObject* setDataPointLabel(PyObject* self, PyObject* args) {
+  PyObject* ptr;
+  int       id;
+  int       label;
+  if (!PyArg_ParseTuple(args, "Oii", &ptr, &id, &label)) {
+    raise << "Error reading parameters (expecting: index ref, object index)";
+    return NULL;
+  }
+  IndexWrapperBase* index = reinterpret_cast<IndexWrapperBase*>(
+      PyLong_AsVoidPtr(ptr));
+  index->ReadLabel(id, label);
   Py_RETURN_NONE;
 }
 

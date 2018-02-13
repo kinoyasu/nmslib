@@ -24,6 +24,7 @@ PyObject* addDataPoint(PyObject* self, PyObject* args);
 PyObject* addDataPointBatch(PyObject* self, PyObject* args);
 PyObject* addDataPointUnoptimizeIndex(PyObject* self, PyObject* args);
 PyObject* disableDataPoint(PyObject* self, PyObject* args);
+PyObject* setDataPointLabel(PyObject* self, PyObject* args);
 PyObject* setQueryTimeParams(PyObject* self, PyObject* args);
 PyObject* createIndex(PyObject* self, PyObject* args);
 PyObject* recreateIndex(PyObject* self, PyObject* args);
